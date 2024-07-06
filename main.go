@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"go/ast"
@@ -111,12 +112,15 @@ func main() {
 	fmt.Println("Modified AST:")
 	printer.Fprint(os.Stdout, fset, modified)
 
-	// If all looks good, you might proceed to write back or just review changes
-	// Commenting out the writing back for review purposes
+	var buf bytes.Buffer
+	printer.Fprint(&buf, fset, file)
+	fmt.Println(buf.String())
 
-	if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil {
-		fmt.Printf("Failed to write modified source back to file: %s\n", err)
-		return
-	}
-	fmt.Println("File modified successfully.")
+	// // Optionally, write back the modified AST to the file
+	// // Uncomment the following lines to enable writing
+	// if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil {
+	// 	fmt.Printf("Failed to write modified source back to file: %s\n", err)
+	// 	return
+	// }
+	// fmt.Println("File modified successfully.")
 }
