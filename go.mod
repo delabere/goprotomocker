@@ -1,4 +1,4 @@
-module other/request_mocker_go
+module other/goprotomocker
 
 go 1.22.3
 
