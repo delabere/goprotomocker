@@ -12,89 +12,57 @@ import (
 	"strings"
 )
 
-// extractAndReplaceStruct finds the original struct and replaces it in the source code.
-func extractAndReplaceStruct(src []byte, fset *token.FileSet, file *ast.File, line int) (string, bool) {
-	var newSrc string
-	var found bool
-
-	ast.Inspect(file, func(n ast.Node) bool {
-		cl, ok := n.(*ast.CompositeLit)
-		if !ok {
-			return true
-		}
-
-		startPos := fset.Position(cl.Pos())
-		endPos := fset.Position(cl.End())
-		if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(cl) {
-			// Generate the new wrapped expression as a string
-			wrappedExprStr := generateWrappedExpression(cl)
-			// Replace the old struct text with the new expression in the source
-			before := src[:startPos.Offset]
-			after := src[endPos.Offset:]
-			newSrc = string(before) + wrappedExprStr + string(after)
-			found = true
-			return false
-		}
-		return true
-	})
-
-	return newSrc, found
-}
-
-// removeAssignmentAndMethods removes the assignment and method chaining around the modified struct.
-func removeAssignmentAndMethods(src []byte, fset *token.FileSet, file *ast.File, line int) (string, bool) {
-	var newSrc string
-	var found bool
-
-	ast.Inspect(file, func(n ast.Node) bool {
-		switch stmt := n.(type) {
-		case *ast.AssignStmt:
-			for _, rhs := range stmt.Rhs {
-				if cl, ok := rhs.(*ast.CompositeLit); ok {
-					startPos := fset.Position(stmt.Pos())
-					endPos := fset.Position(stmt.End())
-					if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(cl) {
-						// Remove the assignment and methods
-						before := src[:startPos.Offset]
-						after := src[endPos.Offset:]
-						newSrc = string(before) + string(after)
-						found = true
-						return false
+// wrapRequestStruct wraps the found struct in a testing framework setup
+func wrapRequestStruct(fset *token.FileSet, node ast.Node, line int) (ast.Node, bool) {
+	var structNode ast.Node
+	found := false
+	ast.Inspect(node, func(n ast.Node) bool {
+		if cl, ok := n.(*ast.CompositeLit); ok {
+			startPos := fset.Position(n.Pos())
+			endPos := fset.Position(n.End())
+			if startPos.Line <= line && endPos.Line >= line {
+				if checkRequestStruct(cl) {
+					responseType := strings.Replace(cl.Type.(*ast.SelectorExpr).Sel.Name, "Request", "Response", 1)
+					responseExpr := &ast.CompositeLit{
+						Type: &ast.SelectorExpr{
+							X:   cl.Type.(*ast.SelectorExpr).X,
+							Sel: ast.NewIdent(responseType),
+						},
 					}
+					callExpr := &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   ast.NewIdent("m"),
+							Sel: ast.NewIdent("ExpectRequest"),
+						},
+						Args: []ast.Expr{
+							&ast.CallExpr{
+								Fun: &ast.SelectorExpr{
+									X:   ast.NewIdent("test"),
+									Sel: ast.NewIdent("RequestEqualTo"),
+								},
+								Args: []ast.Expr{cl},
+							},
+						},
+					}
+					wrappedExpr := &ast.CallExpr{
+						Fun: &ast.SelectorExpr{
+							X:   callExpr,
+							Sel: ast.NewIdent("RespondWith"),
+						},
+						Args: []ast.Expr{responseExpr},
+					}
+					structNode = wrappedExpr
+					found = true
+					return false // Found and transformed the struct
 				}
 			}
 		}
 		return true
 	})
-
-	return newSrc, found
+	return structNode, found
 }
 
-// generateWrappedExpression generates the modified expression as a string.
-func generateWrappedExpression(cl *ast.CompositeLit) string {
-	var builder strings.Builder
-	responseType := strings.Replace(cl.Type.(*ast.SelectorExpr).Sel.Name, "Request", "Response", 1)
-
-	// Begin the wrapped expression
-	fmt.Fprintf(&builder, "m.ExpectRequest(test.RequestEqualTo(%s{\n", cl.Type.(*ast.SelectorExpr).Sel.Name)
-
-	// Iterate through the fields in the CompositeLit and add them to the expression
-	for _, elt := range cl.Elts {
-		if kv, ok := elt.(*ast.KeyValueExpr); ok {
-			key := kv.Key.(*ast.Ident).Name
-			valBuf := &bytes.Buffer{}
-			printer.Fprint(valBuf, token.NewFileSet(), kv.Value)
-			val := valBuf.String()
-			fmt.Fprintf(&builder, "\t%s: %s,\n", key, val)
-		}
-	}
-
-	// Close the original struct and add the response struct
-	fmt.Fprintf(&builder, "})).RespondWith(%s{})", responseType)
-
-	return builder.String()
-}
-
+// checkRequestStruct checks if the node is a Request struct
 func checkRequestStruct(n *ast.CompositeLit) bool {
 	if ident, ok := n.Type.(*ast.Ident); ok && strings.Contains(ident.Name, "Request") {
 		return true
@@ -106,6 +74,7 @@ func checkRequestStruct(n *ast.CompositeLit) bool {
 }
 
 func main() {
+	// Parse command-line arguments
 	var filePath string
 	var lineNumber int
 	flag.StringVar(&filePath, "file", "", "Path to the Go source file")
@@ -117,12 +86,14 @@ func main() {
 		return
 	}
 
+	// Read the source code from file
 	src, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Printf("Failed to read file: %s\n", err)
 		return
 	}
 
+	// Parse the source code to get the AST
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
 	if err != nil {
@@ -130,35 +101,26 @@ func main() {
 		return
 	}
 
-	// First pass to replace the struct
-	newSrc, found := extractAndReplaceStruct(src, fset, file, lineNumber)
+	// Modify the AST based on the specified line
+	modified, found := wrapRequestStruct(fset, file, lineNumber)
 	if !found {
 		fmt.Println("No Request struct found or transformation failed")
 		return
 	}
 
-	// Parse the modified source
-	newFset := token.NewFileSet()
-	newFile, err := parser.ParseFile(newFset, "", newSrc, parser.ParseComments)
-	if err != nil {
-		fmt.Printf("Failed to parse modified source: %s\n", err)
-		return
-	}
+	// Print the modified AST for review
+	fmt.Println("Modified AST:")
+	printer.Fprint(os.Stdout, fset, modified)
 
-	// Second pass to remove assignment and methods
-	finalSrc, found := removeAssignmentAndMethods([]byte(newSrc), newFset, newFile, lineNumber)
-	if !found {
-		fmt.Println("Failed to remove assignment or method chaining")
-		return
-	}
+	var buf bytes.Buffer
+	printer.Fprint(&buf, fset, file)
+	fmt.Println(buf.String())
 
-	fmt.Println("Modified Source Code:")
-	fmt.Println(finalSrc)
-
-	// Optionally, write back the modified source to the file
-	if err := os.WriteFile(filePath, []byte(finalSrc), 0644); err != nil {
-		fmt.Printf("Failed to write modified source back to file: %s\n", err)
-		return
-	}
-	fmt.Println("File modified successfully.")
+	// // Optionally, write back the modified AST to the file
+	// // Uncomment the following lines to enable writing
+	// if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil {
+	// 	fmt.Printf("Failed to write modified source back to file: %s\n", err)
+	// 	return
+	// }
+	// fmt.Println("File modified successfully.")
 }
