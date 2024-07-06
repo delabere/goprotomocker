@@ -1,7 +1,8 @@
 package main
 
 import (
-	"bytes"
+	"flag"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/printer"
@@ -11,13 +12,13 @@ import (
 )
 
 // wrapRequestStruct wraps the found struct in a testing framework setup
-func wrapRequestStruct(fset *token.FileSet, node ast.Node, line int) (ast.Node, error) {
+func wrapRequestStruct(fset *token.FileSet, node ast.Node, line int) (ast.Node, bool) {
 	var structNode ast.Node
+	found := false
 	ast.Inspect(node, func(n ast.Node) bool {
 		if cl, ok := n.(*ast.CompositeLit); ok {
 			startPos := fset.Position(n.Pos())
 			endPos := fset.Position(n.End())
-			// Check if the given line is within the start and end lines of this CompositeLit
 			if startPos.Line <= line && endPos.Line >= line {
 				if checkRequestStruct(cl) {
 					responseType := strings.Replace(cl.Type.(*ast.SelectorExpr).Sel.Name, "Request", "Response", 1)
@@ -50,36 +51,14 @@ func wrapRequestStruct(fset *token.FileSet, node ast.Node, line int) (ast.Node, 
 						Args: []ast.Expr{responseExpr},
 					}
 					structNode = wrappedExpr
+					found = true
 					return false // Found and transformed the struct
 				}
 			}
 		}
 		return true
 	})
-	return structNode, nil
-}
-
-// extractRequestStructFromLineRange searches for a "Request" struct initialization that spans a given line number.
-func extractRequestStructFromLineRange(fset *token.FileSet, node ast.Node, line int) ast.Expr {
-	var structExpr ast.Expr
-	ast.Inspect(node, func(n ast.Node) bool {
-		if n == nil {
-			return true
-		}
-		// Get the position information for the start and end of the current node
-		startPos := fset.Position(n.Pos())
-		endPos := fset.Position(n.End())
-		if startPos.Line <= line && endPos.Line >= line { // Check if the given line is within the span of this node
-			if cl, ok := n.(*ast.CompositeLit); ok {
-				if checkRequestStruct(cl) {
-					structExpr = cl
-					return false // Found the struct, stop inspection
-				}
-			}
-		}
-		return true // Continue inspection to find the struct
-	})
-	return structExpr
+	return structNode, found
 }
 
 // checkRequestStruct checks if the node is a Request struct
@@ -88,46 +67,56 @@ func checkRequestStruct(n *ast.CompositeLit) bool {
 		return true
 	}
 	if sel, ok := n.Type.(*ast.SelectorExpr); ok {
-		// This handles cases where the struct is referred with a package alias
 		return strings.Contains(sel.Sel.Name, "Request")
 	}
 	return false
 }
 
 func main() {
-	src := `package main
+	// Parse command-line arguments
+	var filePath string
+	var lineNumber int
+	flag.StringVar(&filePath, "file", "", "Path to the Go source file")
+	flag.IntVar(&lineNumber, "line", 0, "Line number within the source file")
+	flag.Parse()
 
-import "ledgerproto"
+	if filePath == "" || lineNumber == 0 {
+		fmt.Println("Please specify both a file path and a line number.")
+		return
+	}
 
-func main() {
-    rsp, err := foo.BarRequest{
-        BalanceName: ledgerproto.BalanceNameInterestPayable,
-        AccountId:   pot.AccountId,
-        LegalEntity: currencyLegalEntityMap[pot.Currency],
-        Currency:    pot.Currency,
-    }.Send(ctx).DecodeResponse()
-}`
+	// Read the source code from file
+	src, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Printf("Failed to read file: %s\n", err)
+		return
+	}
 
 	// Parse the source code to get the AST
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "", src, parser.ParseComments)
+	file, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
 	if err != nil {
-		panic(err)
+		fmt.Printf("Failed to parse file: %s\n", err)
+		return
 	}
 
-	// Wrap the struct found at a specific line within its span
-	lineNumber := 10 // Update as needed
-	wrappedNode, err := wrapRequestStruct(fset, file, lineNumber)
-	if err != nil {
-		panic(err)
+	// Modify the AST based on the specified line
+	modified, found := wrapRequestStruct(fset, file, lineNumber)
+	if !found {
+		fmt.Println("No Request struct found or transformation failed")
+		return
 	}
 
-	// Print the modified code
-	if wrappedNode != nil {
-		var buf bytes.Buffer
-		printer.Fprint(&buf, fset, wrappedNode)
-		os.Stdout.Write(buf.Bytes())
-	} else {
-		println("No Request struct found or transformation failed")
+	// Print the modified AST for review
+	fmt.Println("Modified AST:")
+	printer.Fprint(os.Stdout, fset, modified)
+
+	// If all looks good, you might proceed to write back or just review changes
+	// Commenting out the writing back for review purposes
+
+	if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil {
+		fmt.Printf("Failed to write modified source back to file: %s\n", err)
+		return
 	}
+	fmt.Println("File modified successfully.")
 }
