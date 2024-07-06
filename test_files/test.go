@@ -16,17 +16,5 @@ func main() {
 		Currency:    "GBP",
 	}.Send(ctx).DecodeResponse()
 
-	if err != nil {
-		fmt.Println("Error processing request:", err)
-		return
-	}
-
-	fooproto.BarRequest{
-		BalanceName: ledgerproto.BalanceNameInterestPayable,
-		AccountId:   "123456789",
-		LegalEntity: "Monzo Bank Limited",
-		Currency:    "GBP",
-	}
-
 	fmt.Println("Response:", rsp)
 }
