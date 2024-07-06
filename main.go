@@ -105,8 +105,10 @@ func checkRequestStruct(n *ast.CompositeLit) bool {
 func main() {
 	var filePath string
 	var lineNumber int
+	var write bool
 	flag.StringVar(&filePath, "file", "", "Path to the Go source file")
 	flag.IntVar(&lineNumber, "line", 0, "Line number within the source file")
+	flag.BoolVar(&write, "write", false, "Whether to write to the source file")
 	flag.Parse()
 
 	if filePath == "" || lineNumber == 0 {
@@ -139,12 +141,13 @@ func main() {
 	fmt.Println("Original Source Code:")
 	fmt.Println(buf.String())
 
-	// // Optionally, write back the modified source to the file
-	// if err := os.WriteFile(filePath, []byte(newSrc), 0644); err != nil {
-	// 	fmt.Printf("Failed to write modified source back to file: %s\n", err)
-	// 	return
-	// }
-	// fmt.Println("File modified successfully.")
-	// fmt.Println("Modified Source Code:")
-	// fmt.Println(newSrc)
+	if write {
+		// Optionally, write back the modified source to the file
+		if err := os.WriteFile(filePath, buf.Bytes(), 0644); err != nil {
+			fmt.Printf("Failed to write modified source back to file: %s\n", err)
+			return
+		}
+		fmt.Println("File modified successfully.")
+		fmt.Println("Modified Source Code:")
+	}
 }
