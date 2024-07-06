@@ -18,14 +18,12 @@ func extractAndReplaceAst(fset *token.FileSet, file *ast.File, line int) {
 	astutil.Apply(file, func(cr *astutil.Cursor) bool {
 		switch n := cr.Node().(type) {
 		case *ast.AssignStmt:
-			fmt.Println("AssignStmt found")
 			for _, rhs := range n.Rhs {
 				ast.Inspect(rhs, func(n ast.Node) bool {
 					if cl, ok := n.(*ast.CompositeLit); ok {
 						startPos := fset.Position(n.Pos())
 						endPos := fset.Position(n.End())
 						if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(cl) {
-							fmt.Println("CL found within AssignStmt")
 							wrappedExpr := generateWrappedExpressionAsAst(cl)
 							cr.Replace(&ast.ExprStmt{X: wrappedExpr})
 							return false
@@ -40,7 +38,6 @@ func extractAndReplaceAst(fset *token.FileSet, file *ast.File, line int) {
 			startPos := fset.Position(n.Pos())
 			endPos := fset.Position(n.End())
 			if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(n) {
-				fmt.Println("CL found within AssignStmt")
 				wrappedExpr := generateWrappedExpressionAsAst(n)
 				cr.Replace(wrappedExpr)
 				return false
@@ -138,8 +135,6 @@ func main() {
 		fmt.Printf("Error printing AST: %s\n", err)
 		return
 	}
-	fmt.Println("Original Source Code:")
-	fmt.Println(buf.String())
 
 	if write {
 		// Optionally, write back the modified source to the file

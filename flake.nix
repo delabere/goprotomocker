@@ -39,7 +39,7 @@
             # In 'nix develop', we don't need a copy of the source tree
             # in the Nix store.
             src = ./.;
-
+            # GOFLAGS="-mod=readonly";
             # This hash locks the dependencies of this package. It is
             # necessary because of how Go requires network access to resolve
             # VCS.  See https://www.tweag.io/blog/2021-03-04-gomod2nix/ for
@@ -50,7 +50,7 @@
             # remember to bump this hash when your dependencies change.
             # vendorHash = pkgs.lib.fakeHash;
 
-            vendorHash = "sha256-WKz4ItmoSirQ4QiB0aZO9cmzhNY7IcAEeJrsHYrP1rk=";
+            vendorHash = "sha256-q7+iDARJ+o3pMEvwC+CRGWmu1kRbRzZzm6LNdNfHn5g=";
           };
         });
 
