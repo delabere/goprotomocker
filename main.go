@@ -10,24 +10,25 @@ import (
 	"strings"
 )
 
-// extractRequestStructFromStartingLine searches recursively for a "Request" struct initialization
-func extractRequestStructFromStartingLine(fset *token.FileSet, node ast.Node, line int) ast.Expr {
+// extractRequestStructFromLineRange searches for a "Request" struct initialization that spans a given line number.
+func extractRequestStructFromLineRange(fset *token.FileSet, node ast.Node, line int) ast.Expr {
 	var structExpr ast.Expr
 	ast.Inspect(node, func(n ast.Node) bool {
 		if n == nil {
 			return true
 		}
+		// Get the position information for the start and end of the current node
 		startPos := fset.Position(n.Pos())
-		if startPos.Line == line {
-			// Check if the node is a CompositeLit or nested within other constructs
+		endPos := fset.Position(n.End())
+		if startPos.Line <= line && endPos.Line >= line { // Check if the given line is within the span of this node
 			if cl, ok := n.(*ast.CompositeLit); ok {
 				if checkRequestStruct(cl) {
 					structExpr = cl
-					return false // Stop if we find the struct
+					return false // Found the struct, stop inspection
 				}
 			}
 		}
-		return true
+		return true // Continue inspection to find the struct
 	})
 	return structExpr
 }
@@ -50,12 +51,12 @@ func main() {
 import "ledgerproto"
 
 func main() {
-	rsp, err := ledgerproto.CalculateBalanceRequest{
-		BalanceName: ledgerproto.BalanceNameInterestPayable,
-		AccountId:   pot.AccountId,
-		LegalEntity: currencyLegalEntityMap[pot.Currency],
-		Currency:    pot.Currency,
-	}.Send(ctx).DecodeResponse()
+    rsp, err := ledgerproto.CalculateBalanceRequest{
+        BalanceName: ledgerproto.BalanceNameInterestPayable,
+        AccountId:   pot.AccountId,
+        LegalEntity: currencyLegalEntityMap[pot.Currency],
+        Currency:    pot.Currency,
+    }.Send(ctx).DecodeResponse()
 }`
 
 	// Parse the source code to get the AST
@@ -65,16 +66,16 @@ func main() {
 		panic(err)
 	}
 
-	// Loop through a range of lines to find the struct
+	// Specify the known line number that the struct spans
 	for lineNumber := 1; lineNumber <= 10; lineNumber++ {
-		requestStruct := extractRequestStructFromStartingLine(fset, file, lineNumber)
+		requestStruct := extractRequestStructFromLineRange(fset, file, lineNumber)
 		if requestStruct != nil {
 			var buf bytes.Buffer
 			printer.Fprint(&buf, fset, requestStruct)
 			os.Stdout.Write(buf.Bytes())
 			break
 		} else {
-			println("No Request struct found starting on line", lineNumber)
+			println("No Request struct found spanning line", lineNumber)
 		}
 	}
 }
