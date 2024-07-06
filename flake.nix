@@ -30,7 +30,9 @@
         let
           pkgs = nixpkgsFor.${system};
         in
-        {
+        rec{
+          default = go-hello;
+
           go-hello = pkgs.buildGoModule {
             pname = "request-mocker-go";
             inherit version;
