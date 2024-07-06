@@ -77,10 +77,12 @@ func extractAndReplaceStruct(src []byte, fset *token.FileSet, file *ast.File, li
 // generateWrappedExpression generates the modified expression as a string.
 func generateWrappedExpression(cl *ast.CompositeLit) string {
 	var builder strings.Builder
+
 	responseType := strings.Replace(cl.Type.(*ast.SelectorExpr).Sel.Name, "Request", "Response", 1)
+	requestPackageName := cl.Type.(*ast.SelectorExpr).X
 
 	// Begin the wrapped expression
-	fmt.Fprintf(&builder, "m.ExpectRequest(test.RequestEqualTo(%s{\n", cl.Type.(*ast.SelectorExpr).Sel.Name)
+	fmt.Fprintf(&builder, "m.ExpectRequest(test.RequestEqualTo(%s.%s{\n", requestPackageName, cl.Type.(*ast.SelectorExpr).Sel.Name)
 
 	// Iterate through the fields in the CompositeLit and add them to the expression
 	for _, elt := range cl.Elts {
@@ -94,7 +96,7 @@ func generateWrappedExpression(cl *ast.CompositeLit) string {
 	}
 
 	// Close the original struct and add the response struct
-	fmt.Fprintf(&builder, "})).RespondWith(%s{})", responseType)
+	fmt.Fprintf(&builder, "})).RespondWith(%s.%s{})", requestPackageName, responseType)
 
 	return builder.String()
 }
@@ -146,7 +148,7 @@ func main() {
 	// 	fmt.Printf("Failed to write modified source back to file: %s\n", err)
 	// 	return
 	// }
-	// fmt.Println("File modified successfully.")
+	fmt.Println("File modified successfully.")
 	fmt.Println("Modified Source Code:")
 	fmt.Println(newSrc)
 }
