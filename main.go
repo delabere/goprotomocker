@@ -14,31 +14,20 @@ import (
 	"golang.org/x/tools/go/ast/astutil"
 )
 
-// replace ast
 func extractAndReplaceAst(fset *token.FileSet, file *ast.File, line int) {
 	astutil.Apply(file, func(cr *astutil.Cursor) bool {
 		switch n := cr.Node().(type) {
 		case *ast.AssignStmt:
 			fmt.Println("AssignStmt found")
 			for _, rhs := range n.Rhs {
-				// Traverse within the RHS to find the CompositeLit
 				ast.Inspect(rhs, func(n ast.Node) bool {
 					if cl, ok := n.(*ast.CompositeLit); ok {
 						startPos := fset.Position(n.Pos())
 						endPos := fset.Position(n.End())
 						if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(cl) {
 							fmt.Println("CL found within AssignStmt")
-							// Generate the new wrapped expression as a string
-
 							wrappedExpr := generateWrappedExpressionAsAst(cl)
-							// cr.Delete()
-							//
-
-							// cr.Replace(wrappedExpr)
 							cr.Replace(&ast.ExprStmt{X: wrappedExpr})
-							// Replace the entire AssignStmt with wrappedExpr
-							// cr.InsertBefore(wrappedExpr)
-							// cr.Delete()
 							return false
 						}
 						return true
@@ -46,37 +35,21 @@ func extractAndReplaceAst(fset *token.FileSet, file *ast.File, line int) {
 					return true
 				})
 			}
+
+		case *ast.CompositeLit:
+			startPos := fset.Position(n.Pos())
+			endPos := fset.Position(n.End())
+			if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(n) {
+				fmt.Println("CL found within AssignStmt")
+				wrappedExpr := generateWrappedExpressionAsAst(n)
+				cr.Replace(wrappedExpr)
+				return false
+			}
+			return true
 		}
 		return true
 	}, nil)
 
-	// If no AssignStmt was found, fallback to CompositeLit replacement
-	// if !found {
-	// 	ast.Inspect(file, func(n ast.Node) bool {
-	// 		cl, ok := n.(*ast.CompositeLit)
-	// 		if !ok {
-	// 			return true
-	// 		}
-	//
-	// 		fmt.Println("CompositeLit found")
-	//
-	// 		startPos := fset.Position(cl.Pos())
-	// 		endPos := fset.Position(cl.End())
-	// 		if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(cl) {
-	// 			// Generate the new wrapped expression as a string
-	// 			wrappedExprStr := generateWrappedExpression(cl)
-	// 			// Replace the old struct text with the new expression in the source
-	// 			before := src[:startPos.Offset]
-	// 			after := src[endPos.Offset:]
-	// 			newSrc = string(before) + wrappedExprStr + string(after)
-	// 			found = true
-	// 			return false
-	// 		}
-	// 		return true
-	// 	})
-	// }
-
-	// return newSrc, found
 }
 
 // generateWrappedExpressionAsAst generates the modified expression as an ast node
