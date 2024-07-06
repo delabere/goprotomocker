@@ -74,6 +74,11 @@ func extractAndReplaceStruct(src []byte, fset *token.FileSet, file *ast.File, li
 	return newSrc, found
 }
 
+// generateWrappedExpressionAsAst generates the modified expression as an ast node
+func generateWrappedExpressionAsAst(cl *ast.CompositeLit) *ast.Node {
+	return nil
+}
+
 // generateWrappedExpression generates the modified expression as a string.
 func generateWrappedExpression(cl *ast.CompositeLit) string {
 	var builder strings.Builder
