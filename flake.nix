@@ -31,10 +31,10 @@
           pkgs = nixpkgsFor.${system};
         in
         rec{
-          default = go-hello;
+          default = goprotomocker;
 
-          go-hello = pkgs.buildGoModule {
-            pname = "request-mocker-go";
+          goprotomocker = pkgs.buildGoModule {
+            pname = "goprotomocker";
             inherit version;
             # In 'nix develop', we don't need a copy of the source tree
             # in the Nix store.
@@ -50,7 +50,7 @@
             # remember to bump this hash when your dependencies change.
             # vendorHash = pkgs.lib.fakeHash;
 
-            vendorHash = "sha256-q7+iDARJ+o3pMEvwC+CRGWmu1kRbRzZzm6LNdNfHn5g=";
+            vendorHash = "sha256-b4mUPF+dHUDpU7EbnPsGpoohuEDrU/mF129e3g/Tib0=";
           };
         });
 
@@ -68,6 +68,6 @@
       # The default package for 'nix build'. This makes sense if the
       # flake provides only one package or there is a clear "main"
       # package.
-      defaultPackage = forAllSystems (system: self.packages.${system}.go-hello);
+      defaultPackage = forAllSystems (system: self.packages.${system}.goprotomocker);
     };
 }
