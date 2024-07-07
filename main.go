@@ -27,6 +27,9 @@ func extractAndReplaceAst(fset *token.FileSet, file *dst.File, dec *decorator.De
 						endPos := fset.Position(orig.End())
 						if startPos.Line <= line && endPos.Line >= line {
 							wrappedExpr := generateWrappedExpressionAsDst(cl)
+							if wrappedExpr == nil {
+								return false
+							}
 							cr.Replace(&dst.ExprStmt{X: wrappedExpr})
 							return false
 						}
@@ -41,6 +44,9 @@ func extractAndReplaceAst(fset *token.FileSet, file *dst.File, dec *decorator.De
 			endPos := fset.Position(orig.End())
 			if startPos.Line <= line && endPos.Line >= line {
 				wrappedExpr := generateWrappedExpressionAsDst(n)
+				if wrappedExpr == nil {
+					return false
+				}
 				cr.Replace(wrappedExpr)
 				return false
 			}
@@ -115,7 +121,7 @@ func generateWrappedExpressionAsDst(cl *dst.CompositeLit) *dst.CallExpr {
 
 		return callExpr
 	}
-	
+
 	return nil
 }
 
