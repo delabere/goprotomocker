@@ -1,32 +1,31 @@
 package main
 
 import (
-	"bytes"
-	"go/parser"
-	"go/printer"
-	"go/token"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/tools/imports"
 )
 
-func TestMainExpression(t *testing.T) {
-	src := `package main
+func TestMainTransformations(t *testing.T) {
+	tests := []struct {
+		name       string
+		src        string
+		expected   string
+		lineNumber int
+	}{
+		{
+			name: "Expression, first line",
+			src: `package main
 
 func main() {
-	_, err = fooproto.BarRequest{
+	rsp, err := fooproto.BarRequest{
 		IdempotencyKey:    idempotencyKey,
 		SubjectId:         subjectID,
 		Trigger:           fooproto.SomeFooConst,
 	}.Send(ctx).DecodeResponse()
-	if err != nil {
-		panic("uh oh")	
-	}
-}`
-
-	expected := `package main
+}`,
+			expected: `package main
 
 func main() {
 	m.ExpectRequest(test.RequestEqualTo(fooproto.BarRequest{
@@ -34,35 +33,34 @@ func main() {
 		SubjectId:      subjectID,
 		Trigger:        fooproto.SomeFooConst,
 	})).RespondWith(fooproto.BarResponse{})
+}`,
+			lineNumber: 4,
+		},
+		{
+			name: "Expression, last line",
+			src: `package main
 
-	if err != nil {
-		panic("uh oh")
-	}
-}`
+func main() {
+	rsp, err := fooproto.BarRequest{
+		IdempotencyKey:    idempotencyKey,
+		SubjectId:         subjectID,
+		Trigger:           fooproto.SomeFooConst,
+	}.Send(ctx).DecodeResponse()
+}`,
+			expected: `package main
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test-file", src, parser.ParseComments)
-	assert.NoError(t, err)
-
-	// First pass to replace the struct or AssignStmt
-	extractAndReplaceAst(fset, file, 6)
-
-	// Print the parsed AST
-	var buf bytes.Buffer
-	err = printer.Fprint(&buf, fset, file)
-	assert.NoError(t, err)
-
-	// Format the output to preserve the original formatting and whitespace
-	formattedSrc, err := imports.Process("test-file", buf.Bytes(), nil)
-	assert.NoError(t, err)
-
-	// format.Node(&buf, fset, file)
-
-	assert.Equal(t, expected, strings.Trim(string(formattedSrc), "\n"))
-}
-
-func TestMainDeclaration(t *testing.T) {
-	src := `package main
+func main() {
+	m.ExpectRequest(test.RequestEqualTo(fooproto.BarRequest{
+		IdempotencyKey: idempotencyKey,
+		SubjectId:      subjectID,
+		Trigger:        fooproto.SomeFooConst,
+	})).RespondWith(fooproto.BarResponse{})
+}`,
+			lineNumber: 8,
+		},
+		{
+			name: "Declaration",
+			src: `package main
 
 func main() {
 	fooproto.BarRequest{
@@ -70,9 +68,8 @@ func main() {
 		SubjectId:         subjectID,
 		Trigger:           fooproto.SomeFooConst,
 	}
-}`
-
-	expected := `package main
+}`,
+			expected: `package main
 
 func main() {
 	m.ExpectRequest(test.RequestEqualTo(fooproto.BarRequest{
@@ -80,126 +77,66 @@ func main() {
 		SubjectId:      subjectID,
 		Trigger:        fooproto.SomeFooConst,
 	})).RespondWith(fooproto.BarResponse{})
+}`,
+			lineNumber: 4,
+		},
+		{
+			name: "Declaration - with single space after previous line",
+			src: `package main
 
-}`
+func main() {
+	fmt.Println("hello world")
 
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "test-file", src, parser.ParseComments)
-	assert.NoError(t, err)
+	rsp, err := fooproto.BarRequest{
+		IdempotencyKey:    idempotencyKey,
+		SubjectId:         subjectID,
+		Trigger:           fooproto.SomeFooConst,
+	}.Send(ctx).DecodeResponse()
+}`,
+			expected: `package main
 
-	// First pass to replace the struct or AssignStmt
-	extractAndReplaceAst(fset, file, 6)
+func main() {
+	fmt.Println("hello world")
 
-	// Print the parsed AST
-	var buf bytes.Buffer
-	err = printer.Fprint(&buf, fset, file)
-	assert.NoError(t, err)
+	m.ExpectRequest(test.RequestEqualTo(fooproto.BarRequest{
+		IdempotencyKey: idempotencyKey,
+		SubjectId:      subjectID,
+		Trigger:        fooproto.SomeFooConst,
+	})).RespondWith(fooproto.BarResponse{})
+}`,
+			lineNumber: 7,
+		},
+		{
+			name: "Declaration - with comment",
+			src: `package main
 
-	// Format the output to preserve the original formatting and whitespace
-	formattedSrc, err := imports.Process("test-file", buf.Bytes(), nil)
-	assert.NoError(t, err)
+func main() {
+	// Here is a comment
+	fooproto.BarRequest{
+		IdempotencyKey:    idempotencyKey,
+		SubjectId:         subjectID,
+		Trigger:           fooproto.SomeFooConst,
+	}
+}`,
+			expected: `package main
 
-	// format.Node(&buf, fset, file)
+func main() {
+	// Here is a comment
+	m.ExpectRequest(test.RequestEqualTo(fooproto.BarRequest{
+		IdempotencyKey: idempotencyKey,
+		SubjectId:      subjectID,
+		Trigger:        fooproto.SomeFooConst,
+	})).RespondWith(fooproto.BarResponse{})
+}`,
+			lineNumber: 5,
+		},
+	}
 
-	assert.Equal(t, expected, strings.Trim(string(formattedSrc), "\n"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output, err := parseBytes([]byte(tt.src), tt.lineNumber)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expected, strings.Trim(output.String(), "\n"))
+		})
+	}
 }
-
-// func TestWithComment(t *testing.T) {
-// 	src := `package main
-//
-// func main() {
-// 	// There is a comment here
-// 	_, err = fooproto.BarRequest{
-// 		IdempotencyKey:    idempotencyKey,
-// 		SubjectId:         subjectID,
-// 		Trigger:           fooproto.SomeFooConst,
-// 	}.Send(ctx).DecodeResponse()
-// 	if err != nil {
-// 		panic("uh oh")
-// 	}
-// }`
-//
-// 	expected := `package main
-//
-// func main() {
-// 	// There is a comment here
-// 	m.ExpectRequest(test.RequestEqualTo(fooproto.BarRequest{
-// 		IdempotencyKey: idempotencyKey,
-// 		SubjectId:      subjectID,
-// 		Trigger:        fooproto.SomeFooConst,
-// 	})).RespondWith(fooproto.BarResponse{})
-//
-// 	if err != nil {
-// 		panic("uh oh")
-// 	}
-// }`
-//
-// 	fset := token.NewFileSet()
-// 	file, err := parser.ParseFile(fset, "test-file", src, parser.ParseComments)
-// 	assert.NoError(t, err)
-//
-// 	// First pass to replace the struct or AssignStmt
-// 	extractAndReplaceAst(fset, file, 6)
-//
-// 	// Print the parsed AST
-// 	var buf bytes.Buffer
-// 	err = printer.Fprint(&buf, fset, file)
-// 	assert.NoError(t, err)
-//
-// 	// Format the output to preserve the original formatting and whitespace
-// 	formattedSrc, err := imports.Process("test-file", buf.Bytes(), nil)
-// 	assert.NoError(t, err)
-//
-// 	assert.Equal(t, expected, strings.Trim(string(formattedSrc), "\n"))
-// }
-
-// func TestWithExpressionBefore(t *testing.T) {
-// 	src := `package main
-//
-// func main() {
-// 	println("hello world")
-//
-// 	_, err = fooproto.BarRequest{
-// 		IdempotencyKey:    idempotencyKey,
-// 		SubjectId:         subjectID,
-// 		Trigger:           fooproto.SomeFooConst,
-// 	}.Send(ctx).DecodeResponse()
-// 	if err != nil {
-// 		panic("uh oh")
-// 	}
-// }`
-//
-// 	expected := `package main
-//
-// func main() {
-// 	println("hello world")
-//
-// 	m.ExpectRequest(test.RequestEqualTo(fooproto.BarRequest{
-// 		IdempotencyKey: idempotencyKey,
-// 		SubjectId:      subjectID,
-// 		Trigger:        fooproto.SomeFooConst,
-// 	})).RespondWith(fooproto.BarResponse{})
-//
-// 	if err != nil {
-// 		panic("uh oh")
-// 	}
-// }`
-//
-// 	fset := token.NewFileSet()
-// 	file, err := parser.ParseFile(fset, "test-file", src, parser.ParseComments)
-// 	assert.NoError(t, err)
-//
-// 	// First pass to replace the struct or AssignStmt
-// 	extractAndReplaceAst(fset, file, 6)
-//
-// 	// Print the parsed AST
-// 	var buf bytes.Buffer
-// 	err = printer.Fprint(&buf, fset, file)
-// 	assert.NoError(t, err)
-//
-// 	// Format the output to preserve the original formatting and whitespace
-// 	formattedSrc, err := imports.Process("test-file", buf.Bytes(), nil)
-// 	assert.NoError(t, err)
-//
-// 	assert.Equal(t, expected, strings.Trim(string(formattedSrc), "\n"))
-// }
