@@ -150,32 +150,6 @@ func checkRequestStruct(cr *dst.CompositeLit) (bool, string) {
 	return false, ""
 }
 
-func _checkRequestStruct(n *dst.CompositeLit) bool {
-	if ident, ok := n.Type.(*dst.Ident); ok && strings.Contains(ident.Name, "Request") {
-		return true
-	}
-	if sel, ok := n.Type.(*dst.SelectorExpr); ok {
-		return strings.Contains(sel.Sel.Name, "Request")
-	}
-	return false
-}
-
-// func checkRequestStruct(n *dst.CompositeLit) (bool, string) {
-// 	if ident, ok := n.Type.(*dst.Ident); ok && strings.Contains(ident.Name, "Request") {
-// 		return true, "request"
-// 	}
-// 	if ident, ok := n.Type.(*dst.Ident); ok && strings.Contains(ident.Name, "Event") {
-// 		return true, "event"
-// 	}
-// 	if sel, ok := n.Type.(*dst.SelectorExpr); ok && strings.Contains(sel.Sel.Name, "request") {
-// 		return true, "request"
-// 	}
-// 	if sel, ok := n.Type.(*dst.SelectorExpr); ok && strings.Contains(sel.Sel.Name, "event") {
-// 		return true, "event"
-// 	}
-// 	return false, ""
-// }
-
 func parseFile(filePath string, lineNumber int) (bytes.Buffer, error) {
 	src, err := os.ReadFile(filePath)
 	if err != nil {
