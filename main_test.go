@@ -131,24 +131,46 @@ func main() {
 			lineNumber: 5,
 		},
 		{
-			name: "FirehoseEvent",
+			name: "FirehoseEventPublish",
 			src: `package main
 
 func main() {
 	err = FooProto.BazEvent{
-		UserId:          userID,
-		Amount:          "GBP 1.00",
-		Month:           "2024-01",
+		UserId: userID,
+		Amount: "GBP 1.00",
+		Month:  "2024-01",
 	}.FirehosePublish(ctx)
 }`,
 			expected: `package main
 
 func main() {
 	m.ExpectFirehoseEvent(test.EventMatching(FooProto.BazEvent{
-		UserId:          userID,
-		Amount:          "GBP 1.00",
-		Month:           "2024-01",
-		}))
+		UserId: userID,
+		Amount: "GBP 1.00",
+		Month:  "2024-01",
+	}))
+}`,
+			lineNumber: 5,
+		},
+		{
+			name: "FirehoseEvent",
+			src: `package main
+
+func main() {
+	FooProto.BazEvent{
+		UserId: userID,
+		Amount: "GBP 1.00",
+		Month:  "2024-01",
+	}
+}`,
+			expected: `package main
+
+func main() {
+	m.ExpectFirehoseEvent(test.EventMatching(FooProto.BazEvent{
+		UserId: userID,
+		Amount: "GBP 1.00",
+		Month:  "2024-01",
+	}))
 }`,
 			lineNumber: 5,
 		},

@@ -25,7 +25,7 @@ func extractAndReplaceAst(fset *token.FileSet, file *dst.File, dec *decorator.De
 						orig := dec.Ast.Nodes[cl].(*ast.CompositeLit)
 						startPos := fset.Position(orig.Pos())
 						endPos := fset.Position(orig.End())
-						if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(cl) {
+						if startPos.Line <= line && endPos.Line >= line {
 							wrappedExpr := generateWrappedExpressionAsDst(cl)
 							cr.Replace(&dst.ExprStmt{X: wrappedExpr})
 							return false
@@ -39,7 +39,7 @@ func extractAndReplaceAst(fset *token.FileSet, file *dst.File, dec *decorator.De
 			orig := dec.Ast.Nodes[n].(*ast.CompositeLit)
 			startPos := fset.Position(orig.Pos())
 			endPos := fset.Position(orig.End())
-			if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(n) {
+			if startPos.Line <= line && endPos.Line >= line {
 				wrappedExpr := generateWrappedExpressionAsDst(n)
 				cr.Replace(wrappedExpr)
 				return false
@@ -51,7 +51,8 @@ func extractAndReplaceAst(fset *token.FileSet, file *dst.File, dec *decorator.De
 }
 
 func generateWrappedExpressionAsDst(cl *dst.CompositeLit) *dst.CallExpr {
-	if checkRequestStruct(cl) {
+	ok, s := checkRequestStruct(cl)
+	if ok && s == "request" {
 		// Create a deep copy of cl to use in the new expression
 		clCopy := cloneCompositeLit(cl)
 
@@ -89,6 +90,28 @@ func generateWrappedExpressionAsDst(cl *dst.CompositeLit) *dst.CallExpr {
 		return wrappedExpr
 	}
 
+	if ok && s == "event" {
+		// Create a deep copy of cl to use in the new expression
+		clCopy := cloneCompositeLit(cl)
+		callExpr := &dst.CallExpr{
+			Fun: &dst.SelectorExpr{
+				X:   dst.NewIdent("m"),
+				Sel: dst.NewIdent("ExpectFirehoseEvent"),
+			},
+			Args: []dst.Expr{
+				&dst.CallExpr{
+					Fun: &dst.SelectorExpr{
+						X:   dst.NewIdent("test"),
+						Sel: dst.NewIdent("EventMatching"),
+					},
+					Args: []dst.Expr{clCopy}, // Use the copied composite literal here
+				},
+			},
+		}
+
+		return callExpr
+	}
+
 	return nil
 }
 
@@ -109,7 +132,25 @@ func cloneCompositeLit(orig *dst.CompositeLit) *dst.CompositeLit {
 	return copy
 }
 
-func checkRequestStruct(n *dst.CompositeLit) bool {
+func checkRequestStruct(cr *dst.CompositeLit) (bool, string) {
+	switch n := cr.Type.(type) {
+	case *dst.Ident:
+		if strings.Contains(n.Name, "Request") {
+			return true, "request"
+		} else if strings.Contains(n.Name, "Event") {
+			return true, "event"
+		}
+	case *dst.SelectorExpr:
+		if strings.Contains(n.Sel.Name, "Request") {
+			return true, "request"
+		} else if strings.Contains(n.Sel.Name, "Event") {
+			return true, "event"
+		}
+	}
+	return false, ""
+}
+
+func _checkRequestStruct(n *dst.CompositeLit) bool {
 	if ident, ok := n.Type.(*dst.Ident); ok && strings.Contains(ident.Name, "Request") {
 		return true
 	}
@@ -118,6 +159,22 @@ func checkRequestStruct(n *dst.CompositeLit) bool {
 	}
 	return false
 }
+
+// func checkRequestStruct(n *dst.CompositeLit) (bool, string) {
+// 	if ident, ok := n.Type.(*dst.Ident); ok && strings.Contains(ident.Name, "Request") {
+// 		return true, "request"
+// 	}
+// 	if ident, ok := n.Type.(*dst.Ident); ok && strings.Contains(ident.Name, "Event") {
+// 		return true, "event"
+// 	}
+// 	if sel, ok := n.Type.(*dst.SelectorExpr); ok && strings.Contains(sel.Sel.Name, "request") {
+// 		return true, "request"
+// 	}
+// 	if sel, ok := n.Type.(*dst.SelectorExpr); ok && strings.Contains(sel.Sel.Name, "event") {
+// 		return true, "event"
+// 	}
+// 	return false, ""
+// }
 
 func parseFile(filePath string, lineNumber int) (bytes.Buffer, error) {
 	src, err := os.ReadFile(filePath)
