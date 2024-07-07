@@ -52,7 +52,12 @@ func extractAndReplaceAst(fset *token.FileSet, file *dst.File, dec *decorator.De
 
 func generateWrappedExpressionAsDst(cl *dst.CompositeLit) *dst.CallExpr {
 	ok, s := checkRequestStruct(cl)
-	if ok && s == "request" {
+	if !ok {
+		return nil
+	}
+
+	switch s {
+	case "request":
 		// Create a deep copy of cl to use in the new expression
 		clCopy := cloneCompositeLit(cl)
 
@@ -88,9 +93,8 @@ func generateWrappedExpressionAsDst(cl *dst.CompositeLit) *dst.CallExpr {
 		}
 
 		return wrappedExpr
-	}
+	case "event":
 
-	if ok && s == "event" {
 		// Create a deep copy of cl to use in the new expression
 		clCopy := cloneCompositeLit(cl)
 		callExpr := &dst.CallExpr{
@@ -111,7 +115,7 @@ func generateWrappedExpressionAsDst(cl *dst.CompositeLit) *dst.CallExpr {
 
 		return callExpr
 	}
-
+	
 	return nil
 }
 
