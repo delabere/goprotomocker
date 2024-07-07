@@ -6,26 +6,28 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
-	"go/printer"
 	"go/token"
 	"os"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
+	"github.com/dave/dst"
+	"github.com/dave/dst/decorator"
+	"github.com/dave/dst/dstutil"
 )
 
-func extractAndReplaceAst(fset *token.FileSet, file *ast.File, line int) {
-	astutil.Apply(file, func(cr *astutil.Cursor) bool {
+func extractAndReplaceAst(fset *token.FileSet, file *dst.File, dec *decorator.Decorator, line int) {
+	dstutil.Apply(file, func(cr *dstutil.Cursor) bool {
 		switch n := cr.Node().(type) {
-		case *ast.AssignStmt:
+		case *dst.AssignStmt:
 			for _, rhs := range n.Rhs {
-				ast.Inspect(rhs, func(n ast.Node) bool {
-					if cl, ok := n.(*ast.CompositeLit); ok {
-						startPos := fset.Position(n.Pos())
-						endPos := fset.Position(n.End())
+				dst.Inspect(rhs, func(n dst.Node) bool {
+					if cl, ok := n.(*dst.CompositeLit); ok {
+						orig := dec.Ast.Nodes[cl].(*ast.CompositeLit)
+						startPos := fset.Position(orig.Pos())
+						endPos := fset.Position(orig.End())
 						if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(cl) {
-							wrappedExpr := generateWrappedExpressionAsAst(cl)
-							cr.Replace(&ast.ExprStmt{X: wrappedExpr})
+							wrappedExpr := generateWrappedExpressionAsDst(cl)
+							cr.Replace(&dst.ExprStmt{X: wrappedExpr})
 							return false
 						}
 						return true
@@ -33,12 +35,12 @@ func extractAndReplaceAst(fset *token.FileSet, file *ast.File, line int) {
 					return true
 				})
 			}
-
-		case *ast.CompositeLit:
-			startPos := fset.Position(n.Pos())
-			endPos := fset.Position(n.End())
+		case *dst.CompositeLit:
+			orig := dec.Ast.Nodes[n].(*ast.CompositeLit)
+			startPos := fset.Position(orig.Pos())
+			endPos := fset.Position(orig.End())
 			if startPos.Line <= line && endPos.Line >= line && checkRequestStruct(n) {
-				wrappedExpr := generateWrappedExpressionAsAst(n)
+				wrappedExpr := generateWrappedExpressionAsDst(n)
 				cr.Replace(wrappedExpr)
 				return false
 			}
@@ -46,41 +48,42 @@ func extractAndReplaceAst(fset *token.FileSet, file *ast.File, line int) {
 		}
 		return true
 	}, nil)
-
 }
 
-// generateWrappedExpressionAsAst generates the modified expression as an ast node
-func generateWrappedExpressionAsAst(cl *ast.CompositeLit) *ast.CallExpr {
+func generateWrappedExpressionAsDst(cl *dst.CompositeLit) *dst.CallExpr {
 	if checkRequestStruct(cl) {
-		responseType := strings.Replace(cl.Type.(*ast.SelectorExpr).Sel.Name, "Request", "Response", 1)
-		responseExpr := &ast.CompositeLit{
-			Type: &ast.SelectorExpr{
-				X:   cl.Type.(*ast.SelectorExpr).X,
-				Sel: ast.NewIdent(responseType),
+		// Create a deep copy of cl to use in the new expression
+		clCopy := cloneCompositeLit(cl)
+
+		callExpr := &dst.CallExpr{
+			Fun: &dst.SelectorExpr{
+				X:   dst.NewIdent("m"),
+				Sel: dst.NewIdent("ExpectRequest"),
 			},
-		}
-		callExpr := &ast.CallExpr{
-			Fun: &ast.SelectorExpr{
-				X:   ast.NewIdent("m"),
-				Sel: ast.NewIdent("ExpectRequest"),
-			},
-			Args: []ast.Expr{
-				&ast.CallExpr{
-					Fun: &ast.SelectorExpr{
-						X:   ast.NewIdent("test"),
-						Sel: ast.NewIdent("RequestEqualTo"),
+			Args: []dst.Expr{
+				&dst.CallExpr{
+					Fun: &dst.SelectorExpr{
+						X:   dst.NewIdent("test"),
+						Sel: dst.NewIdent("RequestEqualTo"),
 					},
-					Args: []ast.Expr{cl},
+					Args: []dst.Expr{clCopy}, // Use the copied composite literal here
 				},
 			},
 		}
 
-		wrappedExpr := &ast.CallExpr{
-			Fun: &ast.SelectorExpr{
-				X:   callExpr,
-				Sel: ast.NewIdent("RespondWith"),
+		responseType := strings.Replace(cl.Type.(*dst.SelectorExpr).Sel.Name, "Request", "Response", 1)
+		responseExpr := &dst.CompositeLit{
+			Type: &dst.SelectorExpr{
+				X:   cl.Type.(*dst.SelectorExpr).X,
+				Sel: dst.NewIdent(responseType),
 			},
-			Args: []ast.Expr{responseExpr},
+		}
+		wrappedExpr := &dst.CallExpr{
+			Fun: &dst.SelectorExpr{
+				X:   callExpr,
+				Sel: dst.NewIdent("RespondWith"),
+			},
+			Args: []dst.Expr{responseExpr},
 		}
 
 		return wrappedExpr
@@ -89,14 +92,77 @@ func generateWrappedExpressionAsAst(cl *ast.CompositeLit) *ast.CallExpr {
 	return nil
 }
 
-func checkRequestStruct(n *ast.CompositeLit) bool {
-	if ident, ok := n.Type.(*ast.Ident); ok && strings.Contains(ident.Name, "Request") {
+// cloneCompositeLit creates a deep copy of a dst.CompositeLit
+func cloneCompositeLit(orig *dst.CompositeLit) *dst.CompositeLit {
+	if orig == nil {
+		return nil
+	}
+	copy := &dst.CompositeLit{
+		Elts: make([]dst.Expr, len(orig.Elts)),
+	}
+	for i, elt := range orig.Elts {
+		copy.Elts[i] = dst.Clone(elt).(dst.Expr)
+	}
+	if orig.Type != nil {
+		copy.Type = dst.Clone(orig.Type).(dst.Expr)
+	}
+	return copy
+}
+
+func checkRequestStruct(n *dst.CompositeLit) bool {
+	if ident, ok := n.Type.(*dst.Ident); ok && strings.Contains(ident.Name, "Request") {
 		return true
 	}
-	if sel, ok := n.Type.(*ast.SelectorExpr); ok {
+	if sel, ok := n.Type.(*dst.SelectorExpr); ok {
 		return strings.Contains(sel.Sel.Name, "Request")
 	}
 	return false
+}
+
+func parseFile(filePath string, lineNumber int) (bytes.Buffer, error) {
+	src, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Printf("Failed to read file: %s\n", err)
+		return bytes.Buffer{}, err
+	}
+
+	fset := token.NewFileSet()
+	astFile, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
+	if err != nil {
+		fmt.Printf("Failed to parse file: %s\n", err)
+		panic(err)
+	}
+
+	return parse(fset, astFile, lineNumber)
+}
+
+func parseBytes(src []byte, lineNumber int) (bytes.Buffer, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "test-file", src, parser.ParseComments)
+	if err != nil {
+		return bytes.Buffer{}, err
+	}
+
+	return parse(fset, file, lineNumber)
+}
+
+func parse(fset *token.FileSet, astFile *ast.File, lineNumber int) (bytes.Buffer, error) {
+	dec := decorator.NewDecorator(fset)
+	file, err := dec.DecorateFile(astFile)
+	if err != nil {
+		panic(err)
+	}
+
+	// First pass to replace the struct or AssignStmt
+	extractAndReplaceAst(fset, file, dec, lineNumber)
+
+	// put the dst into a buffer
+	var buf bytes.Buffer
+	if err := decorator.Fprint(&buf, file); err != nil {
+		fmt.Printf("Error printing AST: %s\n", err)
+		return bytes.Buffer{}, nil
+	}
+	return buf, err
 }
 
 func main() {
@@ -113,26 +179,9 @@ func main() {
 		return
 	}
 
-	src, err := os.ReadFile(filePath)
+	buf, err := parseFile(filePath, lineNumber)
 	if err != nil {
-		fmt.Printf("Failed to read file: %s\n", err)
-		return
-	}
-
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
-	if err != nil {
-		fmt.Printf("Failed to parse file: %s\n", err)
-		return
-	}
-
-	// First pass to replace the struct or AssignStmt
-	extractAndReplaceAst(fset, file, lineNumber)
-
-	// Print the parsed AST
-	var buf bytes.Buffer
-	if err := printer.Fprint(&buf, fset, file); err != nil {
-		fmt.Printf("Error printing AST: %s\n", err)
+		fmt.Printf("error parsing ast %s", err)
 		return
 	}
 
